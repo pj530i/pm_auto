@@ -26,6 +26,7 @@ DEFAULT_CONFIG = {
     'temperature_unit': 'C',
     'gpio_fan_mode': 1,
     "interval": 1,
+    "oled_enable": True,
 }
 
 class PMAuto():
@@ -91,6 +92,9 @@ class PMAuto():
         if 'oled_rotation' in config:
             if self.oled is not None:
                 self.oled.set_rotation(config['oled_rotation'])
+        if 'oled_enable' in config:
+            if self.oled is not None:
+                self.oled.set_display_enabled(config['oled_enable'])
         if 'interval' in config:
             if not isinstance(config['interval'], (int, float)):
                 self.log.error("Invalid interval")
@@ -161,6 +165,12 @@ class OLEDAuto():
         if 'oled_rotation' in config:
             self.set_rotation(config['oled_rotation'])
 
+        if 'oled_enable' in config:
+            self.set_display_enabled(config['oled_enable'])
+
+    def set_display_enabled(self, enabled):
+        self.oled.set_display_enabled(enabled)
+
     def set_rotation(self, rotation):
         self.oled.set_rotation(rotation)
 
@@ -190,6 +200,9 @@ class OLEDAuto():
     @log_error
     def handle_oled(self, data):
         if self.oled is None or not self.oled.is_ready():
+            return
+
+        if not self.oled.is_display_enabled():
             return
         
         # Get system status data

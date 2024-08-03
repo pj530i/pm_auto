@@ -248,6 +248,7 @@ class OLED():
         self._is_ready = False
         self.oled = None
         self.rotation = 0
+        self._is_enabled = True
         addresses = self.check_oled()
         if len(addresses) == 0:
             self.log.warning("No OLED found")
@@ -258,6 +259,16 @@ class OLED():
 
     def set_rotation(self, rotation):
         self.rotation = rotation
+    
+    def set_display_enabled(self, enabled):
+        self._is_enabled = enabled
+        if self._is_enabled:
+            self.oled.on()
+        else:
+            self.oled.off()
+    
+    def is_display_enabled(self):
+        return self._is_enabled
 
     def is_ready(self):
         return self._is_ready
