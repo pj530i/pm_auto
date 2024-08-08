@@ -1,6 +1,8 @@
 import time
 import threading
 import logging
+import subprocess
+import docker
 from sf_rpi_status import \
     get_cpu_temperature, \
     get_cpu_percent, \
@@ -161,6 +163,19 @@ class OLEDAuto():
         self.ip_index = 0
         self.ip_show_next_timestamp = 0
         self.ip_show_next_interval = 3
+        self.page_switch_timestamp = 0
+        self.page_switch_interval = 12
+        self.services_check_timestamp = 0
+        self.services_check_interval = 12
+        self.page_index = 0
+        self.pages = [self.draw_system_stats, self.draw_services_status]
+
+        self.services = [
+            {'label': 'Home Assistant', 'is_healthy': False, 'docker_name':'homeassistant'},
+            {'label': 'PiHole', 'is_healthy': False, 'docker_name':'pihole'},
+            {'label': 'NodeRed', 'is_healthy': False, 'systemd_name':'nodered.service'},
+            {'label': 'Nginx', 'is_healthy': False, 'systemd_name':'nginx.service'}
+        ]
         self.temperature_unit = config['temperature_unit']
         if 'oled_rotation' in config:
             self.set_rotation(config['oled_rotation'])
@@ -179,7 +194,7 @@ class OLEDAuto():
         return self._is_ready
 
     @log_error
-    def get_data(self):
+    def get_system_data(self):
         memory_info = get_memory_info()
         disk_info = get_disk_info()
         ips = get_ips()
@@ -198,14 +213,85 @@ class OLEDAuto():
         return data
 
     @log_error
-    def handle_oled(self, data):
-        if self.oled is None or not self.oled.is_ready():
-            return
+    def check_docker_health(self, service):
+        try:
+            client = docker.from_env()
+            container = client.containers.get(service['docker_name'])
+            return (container.status == 'running' 
+                and container.attrs['State']['Heatlh']['Status'] == 'healthy')
+        except docker.errors.NotFound:
+            return False
+        except KeyError:     
+            return container.status == 'running'
 
-        if not self.oled.is_display_enabled():
+    @log_error
+    def check_systemd_health(self, service):
+        try:
+            result = subprocess.run(['systemctl', 'is-active', '--quiet', service['systemd_name']],
+            capture_output=True, text=True, timeout=10)
+            return result.returncode == 0
+        except Exception as e:
+            print(f"Error checking {service['systemd_name']}: {str(e)}")
+            return False
+
+
+    @log_error
+    def update_services_data(self):
+        docker_services = [s for s in self.services if 'docker_name' in s]
+        for service in docker_services:
+            service['is_healthy'] = self.check_docker_health(service)
+        
+        systemd_services = [s for s in self.services if 'systemd_name' in s]
+        for service in systemd_services:
+            service['is_healthy'] = self.check_systemd_health(service)
+
+    @log_error
+    def handle_oled(self):
+        if self.oled is None or not self.oled.is_ready() or not self.oled.is_display_enabled():
             return
         
+        if len(self.pages) > 0:
+            page = self.pages[self.page_index]
+            if time.time() - self.page_switch_timestamp > self.page_switch_interval:
+                self.page_switch_timestamp = time.time()
+                self.page_index = (self.page_index + 1) % len(self.pages)
+            page()
+
+    @log_error
+    def draw_services_status(self):
+        # checks take around 30ms, minimize cpu usage by not updating every display interval
+        if time.time() - self.services_check_timestamp > self.services_check_interval:
+                self.services_check_timestamp = time.time()
+                self.update_services_data()
+        else:
+            return
+
+        self.oled.clear()
+        text_y_offset = 2
+        width = 125
+        height = 14
+
+        box_rects = [ 
+            self.Rect(0, 0, width, height), 
+            self.Rect(0, 3 + height, width, height),
+            self.Rect(0, 5 + height * 2, width, height), 
+            self.Rect(0, 7 + height * 3, width, height) 
+        ]
+
+        for box_rect, service in zip(box_rects, self.services[:len(box_rects)]):
+            #fill - white text on black background indicates healthy.  black text on white indicates unhealthy
+            self.oled.draw.rounded_rectangle(box_rect.rect(), radius=7, outline=1, fill= not service['is_healthy'], width=1)
+            (x,y) = box_rect.topcenter()
+            self.oled.draw_text(x=x , y=y + text_y_offset, text=service['label'], align='center', fill=service['is_healthy'])
+
+        # draw the image buffer
+        self.oled.display()
+        return
+    
+    @log_error
+    def draw_system_stats(self):
         # Get system status data
+        data = self.get_system_data()
         cpu_temp_c = data['cpu_temperature']
         cpu_temp_f = cpu_temp_c * 9 / 5 + 32
         cpu_usage = data['cpu_percent']
@@ -255,10 +341,10 @@ class OLEDAuto():
         # draw the image buffer
         self.oled.display()
 
+
     @log_error
     def run(self):
-        data = self.get_data()
-        self.handle_oled(data)
+        self.handle_oled()
 
     @log_error
     def close(self):
