@@ -29,6 +29,7 @@ DEFAULT_CONFIG = {
     'gpio_fan_mode': 1,
     "interval": 1,
     "oled_enable": True,
+    "oled_brightness": 100
 }
 
 class PMAuto():
@@ -97,6 +98,9 @@ class PMAuto():
         if 'oled_enable' in config:
             if self.oled is not None:
                 self.oled.set_display_enabled(config['oled_enable'])
+        if 'oled_brightness' in config:
+            if self.oled is not None:
+                self.oled.set_display_brightness(config['oled_brightness'])
         if 'interval' in config:
             if not isinstance(config['interval'], (int, float)):
                 self.log.error("Invalid interval")
@@ -182,9 +186,15 @@ class OLEDAuto():
 
         if 'oled_enable' in config:
             self.set_display_enabled(config['oled_enable'])
+        
+        if 'oled_brightness' in config:
+            self.set_display_brightness(config['oled_brightness'])
 
     def set_display_enabled(self, enabled):
         self.oled.set_display_enabled(enabled)
+
+    def set_display_brightness(self, brightness):
+        self.oled.set_contrast_percent(brightness)
 
     def set_rotation(self, rotation):
         self.oled.set_rotation(rotation)
@@ -249,7 +259,6 @@ class OLEDAuto():
     def handle_oled(self):
         if self.oled is None or not self.oled.is_ready() or not self.oled.is_display_enabled():
             return
-        
         if len(self.pages) > 0:
             page = self.pages[self.page_index]
             if time.time() - self.page_switch_timestamp > self.page_switch_interval:
