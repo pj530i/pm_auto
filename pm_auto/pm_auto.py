@@ -171,6 +171,7 @@ class OLEDAuto():
         self.page_switch_interval = 12
         self.services_check_timestamp = 0
         self.services_check_interval = 12
+        self.display_on_minutes_per_hour = 3 # if display is enabled, only show the display for the first x mins of each hour
         self.page_index = 0
         self.pages = [self.draw_system_stats, self.draw_services_status]
 
@@ -257,8 +258,17 @@ class OLEDAuto():
 
     @log_error
     def handle_oled(self):
+        # return if oled isn't ready or disabled OR
+        # it's after the number of mins we want to display this hour and all services are healthy.
+        # if any aren't ok then the screen will stay on past the desired mins / hr
         if self.oled is None or not self.oled.is_ready() or not self.oled.is_display_enabled():
             return
+        if time.localtime().tm_min >= self.display_on_minutes_per_hour and \
+             all(s.get('is_healthy', True) for s in self.services):
+             self.oled.clear()
+             self.oled.display()
+             print(time.localtime().tm_min)
+             return
         if len(self.pages) > 0:
             page = self.pages[self.page_index]
             if time.time() - self.page_switch_timestamp > self.page_switch_interval:
