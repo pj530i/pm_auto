@@ -264,11 +264,14 @@ class OLEDAuto():
         if self.oled is None or not self.oled.is_ready() or not self.oled.is_display_enabled():
             return
         if time.localtime().tm_min >= self.display_on_minutes_per_hour and \
-             all(s.get('is_healthy', True) for s in self.services):
-             self.oled.clear()
-             self.oled.display()
-             print(time.localtime().tm_min)
-             return
+            all(s.get('is_healthy', True) for s in self.services):
+            self.oled.clear()
+            self.oled.display()
+            # need to keep checking statuses even if we aren't drawing
+            if time.time() - self.services_check_timestamp > self.services_check_interval:
+                self.services_check_timestamp = time.time()
+                self.update_services_data()
+            return
         if len(self.pages) > 0:
             page = self.pages[self.page_index]
             if time.time() - self.page_switch_timestamp > self.page_switch_interval:
